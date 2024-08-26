@@ -1,4 +1,25 @@
 {
-  "compilerOptions": {},
-  "extends": "expo/tsconfig.base"
+  "compilerOptions": {
+    "target": "esnext",                       // Set to the latest ECMAScript target.
+    "module": "esnext",                       // Use ESNext modules.
+    "lib": ["dom", "esnext"],                 // Include DOM and ESNext libraries.
+    "allowJs": true,                          // Allow JavaScript files to be compiled.
+    "skipLibCheck": true,                     // Skip type checking of declaration files.
+    "strict": true,                           // Enable all strict type-checking options.
+    "esModuleInterop": true,                  // Enable interoperability between CommonJS and ESModules.
+    "moduleResolution": "node",               // Use Node module resolution strategy.
+    "isolatedModules": true,                  // Treat each file as a separate module.
+    "jsx": "react-native",                    // Use the React Native JSX transformer.
+    "noEmit": true,                           // Do not emit compiled files, as Expo handles this.
+    "resolveJsonModule": true,                // Allow importing JSON files.
+    "baseUrl": ".",                           // Base directory for resolving non-relative module names.
+    "paths": {                                // Aliases for your imports.
+      "@components/*": ["src/components/*"],
+      "@screens/*": ["src/screens/*"],
+      "@assets/*": ["assets/*"]
+    }
+  },
+  "include": ["src/**/*", "types/**/*"],      // Include all TypeScript files in src and types directories.
+  "exclude": ["node_modules", "babel.config.js", "metro.config.js", "jest.config.js"], // Exclude unnecessary files from TypeScript.
+  "extends": "expo/tsconfig.base"             // Extend the Expo base configuration.
 }

@@ -37,7 +37,7 @@ const HomeScreen = () => {
             const updates = JSON.parse(pendingUpdates);
             for (const update of updates) {
                 try {
-                    await axios.post('http://192.168.1.64:8080/api/forfaits', update);
+                    await axios.post('http://192.168.1.81:8080/api/forfaits', update);
                 } catch (error) {
                     console.error("Erreur lors de la synchronisation des données locales", error);
                 }
@@ -50,23 +50,9 @@ const HomeScreen = () => {
         setScanned(true);
         setRfid(data);
 
-        // Récupérer les données depuis AsyncStorage d'abord
-        try {
-            const storedData = await AsyncStorage.getItem(data);
-            if (storedData) {
-                const client = JSON.parse(storedData);
-                setForfaitStatus(client.forfaitStatus || "Pas de forfait actif");
-                Alert.alert("Forfait (hors ligne)", `Le client ${data} a un ${client.forfaitStatus || "pas de forfait actif"}.`);
-                return;
-            }
-        } catch (error) {
-            console.error("Erreur lors de la récupération des données hors ligne:", error);
-        }
-
-        // Si en ligne et pas trouvé en local
         if (isConnected) {
             try {
-                const response = await axios.get(`http://192.168.1.64:8080/api/forfaits/status/${data}`);
+                const response = await axios.get(`http://192.168.1.81:8080/api/forfaits/status/${data}`);
                 if (response.status === 200) {
                     setForfaitStatus(`Forfait actif jusqu'au ${response.data}`);
                     Alert.alert("Forfait actif", `Le client ${data} a un forfait actif jusqu'au ${response.data}.`);
@@ -76,18 +62,34 @@ const HomeScreen = () => {
                         forfaitStatus: `Forfait actif jusqu'au ${response.data}`,
                         forfaitExpiration: response.data,
                     };
-                    // Stocker les données localement
                     await AsyncStorage.setItem(data, JSON.stringify(clientData));
                 } else if (response.status === 204) {
                     setForfaitStatus("Pas de forfait actif");
                     Alert.alert("Pas de forfait actif", `Le RFID ${data} n'a pas de forfait actif.`);
+                    const clientData = {
+                        rfid: data,
+                        forfaitStatus: "Pas de forfait actif",
+                    };
+                    await AsyncStorage.setItem(data, JSON.stringify(clientData));
                 }
             } catch (error) {
                 Alert.alert("Erreur", "Problème lors de la vérification du forfait.");
                 console.error(error);
             }
         } else {
-            Alert.alert("Erreur", "Aucune donnée locale disponible pour ce RFID et pas de connexion internet.");
+            try {
+                const storedData = await AsyncStorage.getItem(data);
+                if (storedData) {
+                    const client = JSON.parse(storedData);
+                    setForfaitStatus(client.forfaitStatus || "Pas de forfait actif");
+                    Alert.alert("Forfait (hors ligne)", `Le client ${data} a un ${client.forfaitStatus || "pas de forfait actif"}.`);
+                } else {
+                    Alert.alert("Erreur", "Aucune donnée locale disponible pour ce RFID et pas de connexion internet.");
+                    setForfaitStatus("Pas de données en ligne et pas de connexion internet");
+                }
+            } catch (error) {
+                console.error("Erreur lors de la récupération des données hors ligne:", error);
+            }
         }
     };
 
@@ -105,7 +107,7 @@ const HomeScreen = () => {
 
         if (isConnected) {
             try {
-                await axios.post('http://192.168.1.64:8080/api/forfaits', clientForfaitData);
+                await axios.post('http://192.168.1.81:8080/api/forfaits', clientForfaitData);
                 Alert.alert("Succès", "Forfait attribué avec succès.");
             } catch (error) {
                 Alert.alert("Erreur", "Problème lors de l'attribution du forfait.");

@@ -15,8 +15,10 @@
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "@react-navigation/stack": "^6.4.1",
-    "axios": "^1.7.4",
-    "expo": "~51.0.28",
+    "@types/react": "~18.2.79",
+    "@types/react-dom": "~18.2.25",
+    "axios": "^1.7.5",
+    "expo": "^51.0.31",
     "expo-barcode-scanner": "~13.0.1",
     "expo-camera": "~15.0.14",
     "expo-status-bar": "~1.12.1",
@@ -27,11 +29,15 @@
     "react-native-gesture-handler": "~2.16.1",
     "react-native-safe-area-context": "^4.10.5",
     "react-native-screens": "^3.31.1",
-    "typescript": "~5.3.3",
+    "react-native-vector-icons": "^10.1.0",
+    "react-scripts": "^5.0.1",
+    "semver": "^7.6.3",
+    "typescript": "^4.9.5",
     "voitu": "file:"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0"
+    "@babel/core": "^7.20.0",
+    "eas-cli": "^10.2.4"
   },
   "private": true
 }
