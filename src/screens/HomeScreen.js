@@ -50,6 +50,20 @@ const HomeScreen = () => {
         setScanned(true);
         setRfid(data);
 
+        // Récupérer les données depuis AsyncStorage d'abord
+        try {
+            const storedData = await AsyncStorage.getItem(data);
+            if (storedData) {
+                const client = JSON.parse(storedData);
+                setForfaitStatus(client.forfaitStatus || "Pas de forfait actif");
+                Alert.alert("Forfait (hors ligne)", `Le client ${data} a un ${client.forfaitStatus || "pas de forfait actif"}.`);
+                return;
+            }
+        } catch (error) {
+            console.error("Erreur lors de la récupération des données hors ligne:", error);
+        }
+
+        // Si en ligne et pas trouvé en local
         if (isConnected) {
             try {
                 const response = await axios.get(`http://192.168.1.81:8080/api/forfaits/status/${data}`);
@@ -62,13 +76,26 @@ const HomeScreen = () => {
                         forfaitStatus: `Forfait actif jusqu'au ${response.data}`,
                         forfaitExpiration: response.data,
                     };
+                    // Stocker les données localement
                     await AsyncStorage.setItem(data, JSON.stringify(clientData));
                 } else if (response.status === 204) {
                     setForfaitStatus("Pas de forfait actif");
                     Alert.alert("Pas de forfait actif", `Le RFID ${data} n'a pas de forfait actif.`);
+
+                    // Stocker les données même si pas de forfait actif
                     const clientData = {
                         rfid: data,
                         forfaitStatus: "Pas de forfait actif",
+                    };
+                    await AsyncStorage.setItem(data, JSON.stringify(clientData));
+                } else if (response.status === 404) {
+                    setForfaitStatus("Carte inactive");
+                    Alert.alert("Carte inactive", `Le RFID ${data} est inactif.`);
+
+                    // Stocker les données pour une carte inactive
+                    const clientData = {
+                        rfid: data,
+                        forfaitStatus: "Carte inactive",
                     };
                     await AsyncStorage.setItem(data, JSON.stringify(clientData));
                 }
@@ -77,19 +104,13 @@ const HomeScreen = () => {
                 console.error(error);
             }
         } else {
-            try {
-                const storedData = await AsyncStorage.getItem(data);
-                if (storedData) {
-                    const client = JSON.parse(storedData);
-                    setForfaitStatus(client.forfaitStatus || "Pas de forfait actif");
-                    Alert.alert("Forfait (hors ligne)", `Le client ${data} a un ${client.forfaitStatus || "pas de forfait actif"}.`);
-                } else {
-                    Alert.alert("Erreur", "Aucune donnée locale disponible pour ce RFID et pas de connexion internet.");
-                    setForfaitStatus("Pas de données en ligne et pas de connexion internet");
-                }
-            } catch (error) {
-                console.error("Erreur lors de la récupération des données hors ligne:", error);
-            }
+            // Stocker localement si hors ligne et aucune donnée n'a été trouvée
+            const clientData = {
+                rfid: data,
+                forfaitStatus: "Pas de données en ligne et pas de connexion internet",
+            };
+            await AsyncStorage.setItem(data, JSON.stringify(clientData));
+            Alert.alert("Erreur", "Aucune donnée locale disponible pour ce RFID et pas de connexion internet.");
         }
     };
 
@@ -108,17 +129,40 @@ const HomeScreen = () => {
         if (isConnected) {
             try {
                 await axios.post('http://192.168.1.81:8080/api/forfaits', clientForfaitData);
+
+                // Mettre à jour l'état localement après l'attribution
+                const updatedData = {
+                    rfid,
+                    forfaitStatus: `Forfait actif jusqu'au ${new Date().toISOString()}`,
+                };
+                await AsyncStorage.setItem(rfid, JSON.stringify(updatedData));
+
+                setForfaitStatus(`Forfait actif jusqu'au ${new Date().toISOString()}`);
                 Alert.alert("Succès", "Forfait attribué avec succès.");
             } catch (error) {
                 Alert.alert("Erreur", "Problème lors de l'attribution du forfait.");
                 console.error(error);
             }
         } else {
-            const pendingUpdates = await AsyncStorage.getItem('pendingUpdates');
-            const updates = pendingUpdates ? JSON.parse(pendingUpdates) : [];
-            updates.push(clientForfaitData);
-            await AsyncStorage.setItem('pendingUpdates', JSON.stringify(updates));
-            Alert.alert("Hors ligne", "Les données du forfait ont été stockées localement et seront synchronisées lorsque la connexion sera rétablie.");
+            try {
+                const pendingUpdates = await AsyncStorage.getItem('pendingUpdates');
+                const updates = pendingUpdates ? JSON.parse(pendingUpdates) : [];
+                updates.push(clientForfaitData);
+                await AsyncStorage.setItem('pendingUpdates', JSON.stringify(updates));
+
+                // Mettre à jour l'état localement hors ligne
+                const updatedData = {
+                    rfid,
+                    forfaitStatus: `Forfait actif (hors ligne) jusqu'au ${new Date().toISOString()}`,
+                };
+                await AsyncStorage.setItem(rfid, JSON.stringify(updatedData));
+
+                setForfaitStatus(`Forfait actif (hors ligne) jusqu'au ${new Date().toISOString()}`);
+                Alert.alert("Hors ligne", "Les données du forfait ont été stockées localement et seront synchronisées lorsque la connexion sera rétablie.");
+            } catch (error) {
+                console.error("Erreur lors de la sauvegarde des données hors ligne:", error);
+                Alert.alert("Erreur", "Problème lors de la sauvegarde des données hors ligne.");
+            }
         }
     };
 
