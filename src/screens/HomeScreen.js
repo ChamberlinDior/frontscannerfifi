@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Image, Modal, FlatList } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Image, Modal, FlatList, Switch } from 'react-native';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
@@ -15,6 +15,7 @@ const HomeScreen = ({ navigation }) => {
     const [rfid, setRfid] = useState('');
     const [forfaitStatus, setForfaitStatus] = useState('');
     const [isConnected, setIsConnected] = useState(true);
+    const [offlineMode, setOfflineMode] = useState(false); // New state for offline mode
     const [tickets, setTickets] = useState([]);
     const [isTicketModalVisible, setIsTicketModalVisible] = useState(false);
     const [role, setRole] = useState('');
@@ -61,25 +62,20 @@ const HomeScreen = ({ navigation }) => {
     const handleBarCodeScanned = async ({ type, data }) => {
         setScanned(true);
         setRfid(data);
-        await fetchForfaitStatus(data);
+        if (offlineMode) {
+            fetchOfflineForfaitStatus(data);
+        } else {
+            fetchForfaitStatus(data);
+        }
     };
 
     const fetchForfaitStatus = async (rfid) => {
         try {
-            const storedData = await AsyncStorage.getItem(rfid);
-            if (storedData) {
-                const client = JSON.parse(storedData);
-                setForfaitStatus(client.forfaitStatus || "Pas de forfait actif");
-                Alert.alert("Forfait (hors ligne)", `Le client ${rfid} a un ${client.forfaitStatus || "pas de forfait actif"}.`);
-                return;
-            }
-
             if (isConnected) {
                 const response = await axios.get(`http://192.168.1.81:8080/api/forfaits/status/${rfid}`);
                 processForfaitResponse(response, rfid);
             } else {
-                storeLocalData(rfid, "Pas de données en ligne et pas de connexion internet");
-                Alert.alert("Erreur", "Aucune donnée locale disponible pour ce RFID et pas de connexion internet.");
+                Alert.alert("Erreur", "Pas de connexion internet. Veuillez activer le mode hors ligne.");
             }
         } catch (error) {
             console.error("Erreur lors de la récupération du statut du forfait:", error);
@@ -87,22 +83,51 @@ const HomeScreen = ({ navigation }) => {
         }
     };
 
+    const fetchOfflineForfaitStatus = async (rfid) => {
+        try {
+            const storedData = await AsyncStorage.getItem(rfid);
+            if (storedData) {
+                const client = JSON.parse(storedData);
+                setForfaitStatus(client.forfaitStatus || "Pas de forfait actif");
+                presentForfaitStatus(client.forfaitStatus, client.forfaitExpiration);
+            } else {
+                Alert.alert("Erreur", "Pas de données hors ligne disponibles pour ce RFID.");
+            }
+        } catch (error) {
+            console.error("Erreur lors de la récupération des données locales:", error);
+            Alert.alert("Erreur", "Problème lors de la récupération des données locales.");
+        }
+    };
+
     const processForfaitResponse = async (response, rfid) => {
         if (response.status === 200) {
             const status = `Forfait actif jusqu'au ${response.data}`;
             setForfaitStatus(status);
-            Alert.alert("Forfait actif", `Le client ${rfid} a un forfait actif jusqu'au ${response.data}.`);
+            presentForfaitStatus(status, response.data);
             await storeLocalData(rfid, status, response.data);
         } else if (response.status === 204) {
             const status = "Pas de forfait actif";
             setForfaitStatus(status);
-            Alert.alert("Pas de forfait actif", `Le RFID ${rfid} n'a pas de forfait actif.`);
+            presentForfaitStatus(status);
             await storeLocalData(rfid, status);
         } else if (response.status === 404) {
             const status = "Carte inactive";
             setForfaitStatus(status);
-            Alert.alert("Carte inactive", `Le RFID ${rfid} est inactif.`);
+            presentForfaitStatus(status);
             await storeLocalData(rfid, status);
+        }
+    };
+
+    const presentForfaitStatus = (status, expirationDate = null) => {
+        const currentDate = new Date();
+        const expiration = expirationDate ? new Date(expirationDate) : null;
+
+        if (expiration && expiration < currentDate) {
+            Alert.alert("Forfait expiré", `Le forfait a expiré le ${expirationDate}.`);
+        } else if (expiration && expiration >= currentDate) {
+            Alert.alert("Forfait actif", `Le forfait est actif jusqu'au ${expirationDate}.`);
+        } else {
+            Alert.alert("Statut du forfait", status);
         }
     };
 
@@ -246,7 +271,6 @@ const HomeScreen = ({ navigation }) => {
                         <Text style={styles.roleText}>{role}</Text>
                     </View>
                 </View>
-                {/* La caissière n'a pas le droit de créer des utilisateurs */}
                 {role === 'admin' && (
                     <TouchableOpacity
                         style={styles.createUserButton}
@@ -259,6 +283,15 @@ const HomeScreen = ({ navigation }) => {
 
             <ScrollView contentContainerStyle={styles.content}>
                 <Text style={styles.title}>Bienvenue sur l'écran principal</Text>
+
+                <View style={styles.switchContainer}>
+                    <Text style={styles.switchLabel}>Mode hors connexion</Text>
+                    <Switch
+                        value={offlineMode}
+                        onValueChange={setOfflineMode}
+                    />
+                </View>
+
                 <View style={styles.cameraContainer}>
                     <BarCodeScanner
                         onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
@@ -270,11 +303,11 @@ const HomeScreen = ({ navigation }) => {
                         </TouchableOpacity>
                     )}
                 </View>
+
                 <Text style={styles.statusText}>
                     {forfaitStatus ? forfaitStatus : "Scannez un RFID pour voir le statut du forfait"}
                 </Text>
-                
-                {/* Affichage des boutons d'attribution de forfait et de génération de tickets pour la caissière et l'admin */}
+
                 {(role === 'caissiere' || role === 'admin') && (
                     <>
                         <View style={styles.buttonContainer}>
@@ -396,6 +429,15 @@ const styles = StyleSheet.create({
         color: '#333',
         marginBottom: 30,
         textAlign: 'center',
+    },
+    switchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    switchLabel: {
+        fontSize: 18,
+        marginRight: 10,
     },
     cameraContainer: {
         height: 300,
