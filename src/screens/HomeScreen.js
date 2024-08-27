@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, Modal } from 'react-native';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import QRCode from 'react-native-qrcode-svg';
+import { captureRef } from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 
 const HomeScreen = () => {
     const [hasPermission, setHasPermission] = useState(null);
@@ -11,14 +14,21 @@ const HomeScreen = () => {
     const [rfid, setRfid] = useState('');
     const [forfaitStatus, setForfaitStatus] = useState('');
     const [isConnected, setIsConnected] = useState(true);
+    const [tickets, setTickets] = useState([]);
+    const [isTicketModalVisible, setIsTicketModalVisible] = useState(false);
+    const ticketRef = useRef(null);  // Ref pour capturer la vue du ticket
 
     useEffect(() => {
-        (async () => {
-            const { status } = await BarCodeScanner.requestPermissionsAsync();
-            setHasPermission(status === 'granted');
-        })();
+        requestCameraPermission();
+        monitorNetworkStatus();
+    }, []);
 
-        // Surveiller la connectivité réseau
+    const requestCameraPermission = async () => {
+        const { status } = await BarCodeScanner.requestPermissionsAsync();
+        setHasPermission(status === 'granted');
+    };
+
+    const monitorNetworkStatus = () => {
         const unsubscribe = NetInfo.addEventListener(state => {
             setIsConnected(state.isConnected);
             if (state.isConnected) {
@@ -26,10 +36,8 @@ const HomeScreen = () => {
             }
         });
 
-        return () => {
-            unsubscribe();
-        };
-    }, []);
+        return () => unsubscribe();
+    };
 
     const syncLocalData = async () => {
         const pendingUpdates = await AsyncStorage.getItem('pendingUpdates');
@@ -49,69 +57,58 @@ const HomeScreen = () => {
     const handleBarCodeScanned = async ({ type, data }) => {
         setScanned(true);
         setRfid(data);
+        await fetchForfaitStatus(data);
+    };
 
-        // Récupérer les données depuis AsyncStorage d'abord
+    const fetchForfaitStatus = async (rfid) => {
         try {
-            const storedData = await AsyncStorage.getItem(data);
+            const storedData = await AsyncStorage.getItem(rfid);
             if (storedData) {
                 const client = JSON.parse(storedData);
                 setForfaitStatus(client.forfaitStatus || "Pas de forfait actif");
-                Alert.alert("Forfait (hors ligne)", `Le client ${data} a un ${client.forfaitStatus || "pas de forfait actif"}.`);
+                Alert.alert("Forfait (hors ligne)", `Le client ${rfid} a un ${client.forfaitStatus || "pas de forfait actif"}.`);
                 return;
             }
-        } catch (error) {
-            console.error("Erreur lors de la récupération des données hors ligne:", error);
-        }
 
-        // Si en ligne et pas trouvé en local
-        if (isConnected) {
-            try {
-                const response = await axios.get(`http://192.168.1.81:8080/api/forfaits/status/${data}`);
-                if (response.status === 200) {
-                    setForfaitStatus(`Forfait actif jusqu'au ${response.data}`);
-                    Alert.alert("Forfait actif", `Le client ${data} a un forfait actif jusqu'au ${response.data}.`);
-
-                    const clientData = {
-                        rfid: data,
-                        forfaitStatus: `Forfait actif jusqu'au ${response.data}`,
-                        forfaitExpiration: response.data,
-                    };
-                    // Stocker les données localement
-                    await AsyncStorage.setItem(data, JSON.stringify(clientData));
-                } else if (response.status === 204) {
-                    setForfaitStatus("Pas de forfait actif");
-                    Alert.alert("Pas de forfait actif", `Le RFID ${data} n'a pas de forfait actif.`);
-
-                    // Stocker les données même si pas de forfait actif
-                    const clientData = {
-                        rfid: data,
-                        forfaitStatus: "Pas de forfait actif",
-                    };
-                    await AsyncStorage.setItem(data, JSON.stringify(clientData));
-                } else if (response.status === 404) {
-                    setForfaitStatus("Carte inactive");
-                    Alert.alert("Carte inactive", `Le RFID ${data} est inactif.`);
-
-                    // Stocker les données pour une carte inactive
-                    const clientData = {
-                        rfid: data,
-                        forfaitStatus: "Carte inactive",
-                    };
-                    await AsyncStorage.setItem(data, JSON.stringify(clientData));
-                }
-            } catch (error) {
-                Alert.alert("Erreur", "Problème lors de la vérification du forfait.");
-                console.error(error);
+            if (isConnected) {
+                const response = await axios.get(`http://192.168.1.81:8080/api/forfaits/status/${rfid}`);
+                processForfaitResponse(response, rfid);
+            } else {
+                storeLocalData(rfid, "Pas de données en ligne et pas de connexion internet");
+                Alert.alert("Erreur", "Aucune donnée locale disponible pour ce RFID et pas de connexion internet.");
             }
-        } else {
-            // Stocker localement si hors ligne et aucune donnée n'a été trouvée
-            const clientData = {
-                rfid: data,
-                forfaitStatus: "Pas de données en ligne et pas de connexion internet",
-            };
-            await AsyncStorage.setItem(data, JSON.stringify(clientData));
-            Alert.alert("Erreur", "Aucune donnée locale disponible pour ce RFID et pas de connexion internet.");
+        } catch (error) {
+            console.error("Erreur lors de la récupération du statut du forfait:", error);
+            Alert.alert("Erreur", "Problème lors de la vérification du forfait.");
         }
+    };
+
+    const processForfaitResponse = async (response, rfid) => {
+        if (response.status === 200) {
+            const status = `Forfait actif jusqu'au ${response.data}`;
+            setForfaitStatus(status);
+            Alert.alert("Forfait actif", `Le client ${rfid} a un forfait actif jusqu'au ${response.data}.`);
+            await storeLocalData(rfid, status, response.data);
+        } else if (response.status === 204) {
+            const status = "Pas de forfait actif";
+            setForfaitStatus(status);
+            Alert.alert("Pas de forfait actif", `Le RFID ${rfid} n'a pas de forfait actif.`);
+            await storeLocalData(rfid, status);
+        } else if (response.status === 404) {
+            const status = "Carte inactive";
+            setForfaitStatus(status);
+            Alert.alert("Carte inactive", `Le RFID ${rfid} est inactif.`);
+            await storeLocalData(rfid, status);
+        }
+    };
+
+    const storeLocalData = async (rfid, status, expirationDate = null) => {
+        const clientData = {
+            rfid,
+            forfaitStatus: status,
+            forfaitExpiration: expirationDate,
+        };
+        await AsyncStorage.setItem(rfid, JSON.stringify(clientData));
     };
 
     const handleAssignForfait = async (forfaitType) => {
@@ -128,41 +125,67 @@ const HomeScreen = () => {
 
         if (isConnected) {
             try {
-                await axios.post('http://192.168.1.81:8080/api/forfaits', clientForfaitData);
-
-                // Mettre à jour l'état localement après l'attribution
-                const updatedData = {
-                    rfid,
-                    forfaitStatus: `Forfait actif jusqu'au ${new Date().toISOString()}`,
-                };
-                await AsyncStorage.setItem(rfid, JSON.stringify(updatedData));
-
-                setForfaitStatus(`Forfait actif jusqu'au ${new Date().toISOString()}`);
+                const response = await axios.post('http://192.168.1.81:8080/api/forfaits', clientForfaitData);
+                const newForfaitStatus = `Forfait ${forfaitType} attribué, valide jusqu'à ${response.data.expirationDate}`;
+                setForfaitStatus(newForfaitStatus);
+                await storeLocalData(rfid, newForfaitStatus, response.data.expirationDate);
                 Alert.alert("Succès", "Forfait attribué avec succès.");
             } catch (error) {
                 Alert.alert("Erreur", "Problème lors de l'attribution du forfait.");
                 console.error(error);
             }
         } else {
-            try {
-                const pendingUpdates = await AsyncStorage.getItem('pendingUpdates');
-                const updates = pendingUpdates ? JSON.parse(pendingUpdates) : [];
-                updates.push(clientForfaitData);
-                await AsyncStorage.setItem('pendingUpdates', JSON.stringify(updates));
+            await storePendingUpdates(clientForfaitData);
+        }
+    };
 
-                // Mettre à jour l'état localement hors ligne
-                const updatedData = {
-                    rfid,
-                    forfaitStatus: `Forfait actif (hors ligne) jusqu'au ${new Date().toISOString()}`,
-                };
-                await AsyncStorage.setItem(rfid, JSON.stringify(updatedData));
+    const storePendingUpdates = async (clientForfaitData) => {
+        try {
+            const pendingUpdates = await AsyncStorage.getItem('pendingUpdates');
+            const updates = pendingUpdates ? JSON.parse(pendingUpdates) : [];
+            updates.push(clientForfaitData);
+            await AsyncStorage.setItem('pendingUpdates', JSON.stringify(updates));
+            Alert.alert("Hors ligne", "Les données du forfait ont été stockées localement et seront synchronisées lorsque la connexion sera rétablie.");
+        } catch (error) {
+            console.error("Erreur lors de la sauvegarde des données hors ligne:", error);
+            Alert.alert("Erreur", "Problème lors de la sauvegarde des données hors ligne.");
+        }
+    };
 
-                setForfaitStatus(`Forfait actif (hors ligne) jusqu'au ${new Date().toISOString()}`);
-                Alert.alert("Hors ligne", "Les données du forfait ont été stockées localement et seront synchronisées lorsque la connexion sera rétablie.");
-            } catch (error) {
-                console.error("Erreur lors de la sauvegarde des données hors ligne:", error);
-                Alert.alert("Erreur", "Problème lors de la sauvegarde des données hors ligne.");
-            }
+    const generateTickets = () => {
+        const newTickets = [];
+        for (let i = 0; i < 100; i++) {
+            const ticketNumber = `TICKET-${i + 1}`;
+            const creationDate = new Date().toLocaleDateString('fr-FR');
+            newTickets.push({
+                number: ticketNumber,
+                qrData: 'Transurb',
+                creationDate,
+            });
+        }
+        setTickets(newTickets);
+        setIsTicketModalVisible(true);
+    };
+
+    const renderTicketPreview = ({ item }) => (
+        <View style={styles.ticketCard} ref={ticketRef}>
+            <Text style={styles.ticketText}>Trans'urb</Text>
+            <QRCode value={item.qrData} size={100} />
+            <Text style={styles.ticketText}>{item.number}</Text>
+            <Text style={styles.ticketDate}>Date: {item.creationDate}</Text>
+        </View>
+    );
+
+    const handlePrintTicket = async () => {
+        try {
+            const uri = await captureRef(ticketRef, {
+                format: 'png',
+                quality: 0.8,
+            });
+            await Sharing.shareAsync(uri);
+        } catch (error) {
+            console.error("Erreur lors de l'impression ou de l'enregistrement du ticket:", error);
+            Alert.alert("Erreur", "Impossible d'imprimer ou d'enregistrer le ticket.");
         }
     };
 
@@ -181,9 +204,11 @@ const HomeScreen = () => {
                     onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
                     style={StyleSheet.absoluteFillObject}
                 />
-                {scanned && <TouchableOpacity style={styles.scanAgainButton} onPress={() => setScanned(false)}>
-                    <Text style={styles.scanAgainButtonText}>Scanner à nouveau</Text>
-                </TouchableOpacity>}
+                {scanned && (
+                    <TouchableOpacity style={styles.scanAgainButton} onPress={() => setScanned(false)}>
+                        <Text style={styles.scanAgainButtonText}>Scanner à nouveau</Text>
+                    </TouchableOpacity>
+                )}
             </View>
             <Text style={styles.statusText}>
                 {forfaitStatus ? forfaitStatus : "Scannez un RFID pour voir le statut du forfait"}
@@ -199,6 +224,34 @@ const HomeScreen = () => {
                     <Text style={styles.buttonText}>Attribuer Forfait Mois</Text>
                 </TouchableOpacity>
             </View>
+            <TouchableOpacity style={[styles.button, { marginTop: 20 }]} onPress={generateTickets}>
+                <Text style={styles.buttonText}>Générer Tickets</Text>
+            </TouchableOpacity>
+
+            <Modal
+                visible={isTicketModalVisible}
+                animationType="slide"
+                onRequestClose={() => setIsTicketModalVisible(false)}
+            >
+                <View style={styles.modalContainer}>
+                    <Text style={styles.modalTitle}>Aperçu des Tickets</Text>
+                    <FlatList
+                        data={tickets}
+                        renderItem={renderTicketPreview}
+                        keyExtractor={(item) => item.number}
+                        contentContainerStyle={styles.ticketList}
+                    />
+                    <TouchableOpacity style={styles.printButton} onPress={handlePrintTicket}>
+                        <Text style={styles.buttonText}>Imprimer/Enregistrer</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.button, { marginTop: 20 }]}
+                        onPress={() => setIsTicketModalVisible(false)}
+                    >
+                        <Text style={styles.buttonText}>Fermer</Text>
+                    </TouchableOpacity>
+                </View>
+            </Modal>
         </ScrollView>
     );
 };
@@ -276,6 +329,44 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 14,
         fontWeight: 'bold',
+    },
+    modalContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+        backgroundColor: '#fff',
+    },
+    modalTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        marginBottom: 20,
+    },
+    ticketList: {
+        width: '100%',
+    },
+    ticketCard: {
+        borderWidth: 1,
+        borderColor: '#ccc',
+        padding: 10,
+        margin: 5,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    ticketText: {
+        fontSize: 18,
+        marginVertical: 5,
+    },
+    ticketDate: {
+        fontSize: 14,
+        color: '#888',
+    },
+    printButton: {
+        backgroundColor: '#2ecc71',
+        padding: 15,
+        borderRadius: 10,
+        marginVertical: 10,
+        alignItems: 'center',
     },
 });
 
