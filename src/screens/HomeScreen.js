@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, FlatList, Modal } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Image, Modal, FlatList } from 'react-native';
 import { BarCodeScanner } from 'expo-barcode-scanner';
+import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
@@ -8,7 +9,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 
-const HomeScreen = () => {
+const HomeScreen = ({ navigation }) => {
     const [hasPermission, setHasPermission] = useState(null);
     const [scanned, setScanned] = useState(false);
     const [rfid, setRfid] = useState('');
@@ -16,11 +17,15 @@ const HomeScreen = () => {
     const [isConnected, setIsConnected] = useState(true);
     const [tickets, setTickets] = useState([]);
     const [isTicketModalVisible, setIsTicketModalVisible] = useState(false);
-    const ticketRef = useRef(null);  // Ref pour capturer la vue du ticket
+    const [role, setRole] = useState('');
+    const [username, setUsername] = useState('');
+    const [avatar, setAvatar] = useState(null);
+    const ticketRef = useRef(null);
 
     useEffect(() => {
         requestCameraPermission();
         monitorNetworkStatus();
+        getUserData();
     }, []);
 
     const requestCameraPermission = async () => {
@@ -35,7 +40,6 @@ const HomeScreen = () => {
                 syncLocalData();
             }
         });
-
         return () => unsubscribe();
     };
 
@@ -178,7 +182,7 @@ const HomeScreen = () => {
 
     const handlePrintTicket = async () => {
         try {
-            const uri = await captureRef(ticketRef, {
+            const uri = await captureRef(ticketRef.current, {
                 format: 'png',
                 quality: 0.8,
             });
@@ -186,6 +190,36 @@ const HomeScreen = () => {
         } catch (error) {
             console.error("Erreur lors de l'impression ou de l'enregistrement du ticket:", error);
             Alert.alert("Erreur", "Impossible d'imprimer ou d'enregistrer le ticket.");
+        }
+    };
+
+    const getUserData = async () => {
+        const storedRole = await AsyncStorage.getItem('userRole');
+        const storedUsername = await AsyncStorage.getItem('userName');
+        const storedAvatar = await AsyncStorage.getItem('userAvatar');
+        setRole(storedRole);
+        setUsername(storedUsername);
+        setAvatar(storedAvatar ? { uri: storedAvatar } : null);
+    };
+
+    const handleLogout = async () => {
+        await AsyncStorage.removeItem('userRole');
+        await AsyncStorage.removeItem('userName');
+        await AsyncStorage.removeItem('userAvatar');
+        navigation.navigate('Login');
+    };
+
+    const handlePickImage = async () => {
+        let result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 1,
+        });
+
+        if (!result.canceled) {
+            setAvatar({ uri: result.uri });
+            await AsyncStorage.setItem('userAvatar', result.uri);
         }
     };
 
@@ -197,36 +231,73 @@ const HomeScreen = () => {
     }
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text style={styles.title}>Bienvenue sur l'écran principal</Text>
-            <View style={styles.cameraContainer}>
-                <BarCodeScanner
-                    onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-                    style={StyleSheet.absoluteFillObject}
-                />
-                {scanned && (
-                    <TouchableOpacity style={styles.scanAgainButton} onPress={() => setScanned(false)}>
-                        <Text style={styles.scanAgainButtonText}>Scanner à nouveau</Text>
+        <View style={styles.container}>
+            <View style={styles.header}>
+                <View style={styles.userInfo}>
+                    {avatar ? (
+                        <Image source={avatar} style={styles.avatar} />
+                    ) : (
+                        <View style={styles.avatarPlaceholder}>
+                            <Text style={styles.avatarText}>{username?.charAt(0).toUpperCase()}</Text>
+                        </View>
+                    )}
+                    <View>
+                        <Text style={styles.usernameText}>{username}</Text>
+                        <Text style={styles.roleText}>{role}</Text>
+                    </View>
+                </View>
+                {/* La caissière n'a pas le droit de créer des utilisateurs */}
+                {role === 'admin' && (
+                    <TouchableOpacity
+                        style={styles.createUserButton}
+                        onPress={() => navigation.navigate('UserManagement')}
+                    >
+                        <Text style={styles.buttonText}>Créer un utilisateur</Text>
                     </TouchableOpacity>
                 )}
             </View>
-            <Text style={styles.statusText}>
-                {forfaitStatus ? forfaitStatus : "Scannez un RFID pour voir le statut du forfait"}
-            </Text>
-            <View style={styles.buttonContainer}>
-                <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('jour')}>
-                    <Text style={styles.buttonText}>Attribuer Forfait Jour</Text>
+
+            <ScrollView contentContainerStyle={styles.content}>
+                <Text style={styles.title}>Bienvenue sur l'écran principal</Text>
+                <View style={styles.cameraContainer}>
+                    <BarCodeScanner
+                        onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+                        style={StyleSheet.absoluteFillObject}
+                    />
+                    {scanned && (
+                        <TouchableOpacity style={styles.scanAgainButton} onPress={() => setScanned(false)}>
+                            <Text style={styles.scanAgainButtonText}>Scanner à nouveau</Text>
+                        </TouchableOpacity>
+                    )}
+                </View>
+                <Text style={styles.statusText}>
+                    {forfaitStatus ? forfaitStatus : "Scannez un RFID pour voir le statut du forfait"}
+                </Text>
+                
+                {/* Affichage des boutons d'attribution de forfait et de génération de tickets pour la caissière et l'admin */}
+                {(role === 'caissiere' || role === 'admin') && (
+                    <>
+                        <View style={styles.buttonContainer}>
+                            <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('jour')}>
+                                <Text style={styles.buttonText}>Attribuer Forfait Jour</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('semaine')}>
+                                <Text style={styles.buttonText}>Attribuer Forfait Semaine</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('mois')}>
+                                <Text style={styles.buttonText}>Attribuer Forfait Mois</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity style={[styles.button, { marginTop: 20 }]} onPress={generateTickets}>
+                            <Text style={styles.buttonText}>Générer Tickets</Text>
+                        </TouchableOpacity>
+                    </>
+                )}
+
+                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                    <Text style={styles.buttonText}>Déconnexion</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('semaine')}>
-                    <Text style={styles.buttonText}>Attribuer Forfait Semaine</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('mois')}>
-                    <Text style={styles.buttonText}>Attribuer Forfait Mois</Text>
-                </TouchableOpacity>
-            </View>
-            <TouchableOpacity style={[styles.button, { marginTop: 20 }]} onPress={generateTickets}>
-                <Text style={styles.buttonText}>Générer Tickets</Text>
-            </TouchableOpacity>
+            </ScrollView>
 
             <Modal
                 visible={isTicketModalVisible}
@@ -252,17 +323,72 @@ const HomeScreen = () => {
                     </TouchableOpacity>
                 </View>
             </Modal>
-        </ScrollView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#f0f4f7',
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingTop: 40,
+        paddingBottom: 10,
+        backgroundColor: '#3498db',
+    },
+    userInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    avatar: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        marginRight: 10,
+    },
+    avatarPlaceholder: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#bdc3c7',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 10,
+    },
+    avatarText: {
+        color: '#fff',
+        fontSize: 24,
+        fontWeight: 'bold',
+    },
+    usernameText: {
+        fontSize: 18,
+        color: '#fff',
+        fontWeight: 'bold',
+    },
+    roleText: {
+        fontSize: 16,
+        color: '#fff',
+    },
+    createUserButton: {
+        backgroundColor: '#2ecc71',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 20,
+        shadowColor: '#16a085',
+        shadowOpacity: 0.3,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 10,
+        elevation: 3,
+    },
+    content: {
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 20,
-        backgroundColor: '#f0f4f7',
     },
     title: {
         fontSize: 28,
@@ -325,10 +451,19 @@ const styles = StyleSheet.create({
         shadowRadius: 10,
         elevation: 3,
     },
-    scanAgainButtonText: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: 'bold',
+    logoutButton: {
+        backgroundColor: '#e74c3c',
+        paddingVertical: 15,
+        paddingHorizontal: 25,
+        borderRadius: 10,
+        marginVertical: 10,
+        width: '100%',
+        alignItems: 'center',
+        shadowColor: '#2c3e50',
+        shadowOpacity: 0.3,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 10,
+        elevation: 3,
     },
     modalContainer: {
         flex: 1,
