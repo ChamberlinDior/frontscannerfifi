@@ -41,7 +41,6 @@
     "react-native-svg": "^15.2.0",
     "react-native-vector-icons": "^10.1.0",
     "react-native-view-shot": "3.8.0",
-    "react-scripts": "^5.0.1",
     "semver": "^7.6.3",
     "typescript": "~5.3.3",
     "voitu": "file:"
