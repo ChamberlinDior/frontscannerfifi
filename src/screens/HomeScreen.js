@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Alert, Image, Modal, FlatList, Switch } from 'react-native';
+import { ScrollView, View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image, Modal, FlatList } from 'react-native';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
@@ -15,13 +15,18 @@ const HomeScreen = ({ navigation }) => {
     const [rfid, setRfid] = useState('');
     const [forfaitStatus, setForfaitStatus] = useState('');
     const [isConnected, setIsConnected] = useState(true);
-    const [offlineMode, setOfflineMode] = useState(false); // New state for offline mode
+    const [offlineMode, setOfflineMode] = useState(false);
     const [tickets, setTickets] = useState([]);
     const [isTicketModalVisible, setIsTicketModalVisible] = useState(false);
     const [role, setRole] = useState('');
     const [username, setUsername] = useState('');
     const [avatar, setAvatar] = useState(null);
     const ticketRef = useRef(null);
+
+    const [selectedDestination, setSelectedDestination] = useState('');
+    const destinations = ['Owendo-Charbonnage', 'Akanda-Plein Niger', 'Charbonnage-Owendo', 'Plein Niger-Akanda'];
+    const [busId, setBusId] = useState(1);
+    const [uniqueUserNumber, setUniqueUserNumber] = useState('USER1234');
 
     useEffect(() => {
         requestCameraPermission();
@@ -37,8 +42,11 @@ const HomeScreen = ({ navigation }) => {
     const monitorNetworkStatus = () => {
         const unsubscribe = NetInfo.addEventListener(state => {
             setIsConnected(state.isConnected);
-            if (state.isConnected) {
+            if (!state.isConnected) {
+                setOfflineMode(true);
+            } else {
                 syncLocalData();
+                setOfflineMode(false);
             }
         });
         return () => unsubscribe();
@@ -50,7 +58,7 @@ const HomeScreen = ({ navigation }) => {
             const updates = JSON.parse(pendingUpdates);
             for (const update of updates) {
                 try {
-                    await axios.post('http://192.168.1.81:8080/api/forfaits', update);
+                    await axios.post('http://172.20.10.4:8080/api/forfaits', update);
                 } catch (error) {
                     console.error("Erreur lors de la synchronisation des données locales", error);
                 }
@@ -72,7 +80,7 @@ const HomeScreen = ({ navigation }) => {
     const fetchForfaitStatus = async (rfid) => {
         try {
             if (isConnected) {
-                const response = await axios.get(`http://192.168.1.81:8080/api/forfaits/status/${rfid}`);
+                const response = await axios.get(`http://172.20.10.4:8080/api/forfaits/status/${rfid}`);
                 processForfaitResponse(response, rfid);
             } else {
                 Alert.alert("Erreur", "Pas de connexion internet. Veuillez activer le mode hors ligne.");
@@ -154,7 +162,7 @@ const HomeScreen = ({ navigation }) => {
 
         if (isConnected) {
             try {
-                const response = await axios.post('http://192.168.1.81:8080/api/forfaits', clientForfaitData);
+                const response = await axios.post('http://172.20.10.4:8080/api/forfaits', clientForfaitData);
                 const newForfaitStatus = `Forfait ${forfaitType} attribué, valide jusqu'à ${response.data.expirationDate}`;
                 setForfaitStatus(newForfaitStatus);
                 await storeLocalData(rfid, newForfaitStatus, response.data.expirationDate);
@@ -225,6 +233,100 @@ const HomeScreen = ({ navigation }) => {
         setRole(storedRole);
         setUsername(storedUsername);
         setAvatar(storedAvatar ? { uri: storedAvatar } : null);
+
+        if (storedRole === 'chauffeur') {
+            updateBusWithChauffeurInfo(storedUsername, uniqueUserNumber);
+        }
+    };
+
+    const updateBusWithChauffeurInfo = async (username, uniqueUserNumber) => {
+        try {
+            await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/chauffeur`, {
+                chauffeurName: username,
+                chauffeurNumber: uniqueUserNumber
+            });
+            console.log("Informations du chauffeur enregistrées avec succès.");
+        } catch (error) {
+            console.error("Erreur lors de l'enregistrement des informations du chauffeur :", error);
+        }
+    };
+
+    const handleSaveChauffeurInfo = async () => {
+        if (!chauffeurName || !chauffeurUniqueNumber || !busPlateNumber) {
+            Alert.alert("Erreur", "Veuillez remplir le nom, le numéro unique du chauffeur et la plaque d'immatriculation du bus.");
+            return;
+        }
+
+        try {
+            const busResponse = await axios.get(`http://172.20.10.4:8080/api/buses/matricule/${busPlateNumber}`);
+            if (busResponse.status === 200) {
+                const busId = busResponse.data.id;
+                const chauffeurResponse = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/chauffeur`, {
+                    chauffeurName: chauffeurName,
+                    chauffeurNumber: chauffeurUniqueNumber
+                });
+
+                if (chauffeurResponse.status === 200) {
+                    Alert.alert("Succès", "Informations du chauffeur enregistrées avec succès.");
+                } else {
+                    Alert.alert("Erreur", "Impossible de mettre à jour les informations du chauffeur.");
+                }
+            } else {
+                Alert.alert("Erreur", "Le bus avec ce numéro de plaque n'existe pas.");
+            }
+        } catch (error) {
+            console.error("Erreur lors de la vérification du bus :", error);
+            Alert.alert("Erreur", "Problème lors de la vérification du bus.");
+        }
+    };
+
+    const handleDestinationSelection = async (destination) => {
+        try {
+            setSelectedDestination(destination);
+            const response = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/select-destination`, null, {
+                params: { destination: destination },
+            });
+            if (response.status === 200) {
+                Alert.alert("Succès", `Destination ${destination} enregistrée avec succès.`);
+            } else {
+                Alert.alert("Erreur", "Impossible d'enregistrer la destination.");
+            }
+        } catch (error) {
+            console.error("Erreur lors de l'enregistrement de la destination :", error);
+            Alert.alert("Erreur", "Problème lors de l'enregistrement de la destination.");
+        }
+    };
+
+    const startTrajet = async () => {
+        if (!selectedDestination) {
+            Alert.alert("Erreur", "Veuillez sélectionner une destination avant de commencer le trajet.");
+            return;
+        }
+
+        try {
+            const response = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/start`, {
+                uniqueUserNumber: uniqueUserNumber,
+                destination: selectedDestination,
+            });
+            if (response.status === 200) {
+                Alert.alert("Succès", "Le trajet a commencé avec succès.");
+            } else {
+                Alert.alert("Erreur", "Problème lors du démarrage du trajet.");
+            }
+        } catch (error) {
+            Alert.alert("Erreur", "Impossible de commencer le trajet.");
+            console.error("Erreur lors du démarrage du trajet :", error);
+        }
+    };
+
+    const endTrajet = async () => {
+        try {
+            const response = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/end`);
+            Alert.alert("Succès", "Le trajet a été terminé avec succès.");
+        } catch (error) {
+            Alert.alert("Erreur", "Impossible de terminer le trajet.");
+            console.error("Erreur lors de la fin du trajet :", error);
+        }
     };
 
     const handleLogout = async () => {
@@ -271,27 +373,9 @@ const HomeScreen = ({ navigation }) => {
                         <Text style={styles.roleText}>{role}</Text>
                     </View>
                 </View>
-                {role === 'admin' && (
-                    <TouchableOpacity
-                        style={styles.createUserButton}
-                        onPress={() => navigation.navigate('UserManagement')}
-                    >
-                        <Text style={styles.buttonText}>Créer un utilisateur</Text>
-                    </TouchableOpacity>
-                )}
             </View>
 
             <ScrollView contentContainerStyle={styles.content}>
-                <Text style={styles.title}>Bienvenue sur l'écran principal</Text>
-
-                <View style={styles.switchContainer}>
-                    <Text style={styles.switchLabel}>Mode hors connexion</Text>
-                    <Switch
-                        value={offlineMode}
-                        onValueChange={setOfflineMode}
-                    />
-                </View>
-
                 <View style={styles.cameraContainer}>
                     <BarCodeScanner
                         onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
@@ -308,28 +392,60 @@ const HomeScreen = ({ navigation }) => {
                     {forfaitStatus ? forfaitStatus : "Scannez un RFID pour voir le statut du forfait"}
                 </Text>
 
-                {(role === 'caissiere' || role === 'admin') && (
-                    <>
-                        <View style={styles.buttonContainer}>
-                            <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('jour')}>
-                                <Text style={styles.buttonText}>Attribuer Forfait Jour</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('semaine')}>
-                                <Text style={styles.buttonText}>Attribuer Forfait Semaine</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.button} onPress={() => handleAssignForfait('mois')}>
-                                <Text style={styles.buttonText}>Attribuer Forfait Mois</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <TouchableOpacity style={[styles.button, { marginTop: 20 }]} onPress={generateTickets}>
-                            <Text style={styles.buttonText}>Générer Tickets</Text>
+                {/* Afficher les boutons uniquement si le rôle n'est pas "chauffeur" */}
+                {role !== 'CHAUFFEUR' && (
+                    <View style={styles.buttonRow}>
+                        <TouchableOpacity style={styles.squareButton} onPress={() => handleAssignForfait('jour')}>
+                            <Text style={styles.buttonText}>Jour</Text>
                         </TouchableOpacity>
-                    </>
+                        <TouchableOpacity style={styles.squareButton} onPress={() => handleAssignForfait('semaine')}>
+                            <Text style={styles.buttonText}>Semaine</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.squareButton} onPress={() => handleAssignForfait('mois')}>
+                            <Text style={styles.buttonText}>Mois</Text>
+                        </TouchableOpacity>
+                    </View>
                 )}
 
-                <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-                    <Text style={styles.buttonText}>Déconnexion</Text>
-                </TouchableOpacity>
+                <Text style={styles.title}>Sélectionner la Destination</Text>
+                <FlatList
+                    data={destinations}
+                    horizontal={true}
+                    keyExtractor={(item) => item}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity
+                            style={[styles.destinationButton, selectedDestination === item && styles.selectedButton]}
+                            onPress={() => handleDestinationSelection(item)}
+                        >
+                            <Text style={styles.destinationText}>{item}</Text>
+                        </TouchableOpacity>
+                    )}
+                    contentContainerStyle={styles.destinationList}
+                />
+                <View style={styles.actionButtonsContainer}>
+                    <TouchableOpacity
+                        style={styles.startButton}
+                        onPress={startTrajet}
+                        disabled={!selectedDestination}
+                    >
+                        <Text style={styles.buttonText}>Commencer le Trajet</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.endButton}
+                        onPress={endTrajet}
+                    >
+                        <Text style={styles.buttonText}>Terminer le Trajet</Text>
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.footerButtons}>
+                    <TouchableOpacity style={styles.smallButton} onPress={generateTickets}>
+                        <Text style={styles.buttonText}>Générer Tickets</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.smallButton} onPress={handleLogout}>
+                        <Text style={styles.buttonText}>Déconnexion</Text>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
 
             <Modal
@@ -407,17 +523,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#fff',
     },
-    createUserButton: {
-        backgroundColor: '#2ecc71',
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 20,
-        shadowColor: '#16a085',
-        shadowOpacity: 0.3,
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 10,
-        elevation: 3,
-    },
     content: {
         alignItems: 'center',
         justifyContent: 'center',
@@ -427,17 +532,8 @@ const styles = StyleSheet.create({
         fontSize: 28,
         fontWeight: 'bold',
         color: '#333',
-        marginBottom: 30,
-        textAlign: 'center',
-    },
-    switchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
         marginBottom: 20,
-    },
-    switchLabel: {
-        fontSize: 18,
-        marginRight: 10,
+        textAlign: 'center',
     },
     cameraContainer: {
         height: 300,
@@ -456,30 +552,79 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         fontWeight: '600',
     },
-    buttonContainer: {
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
+    buttonRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
         width: '80%',
+        marginBottom: 20,
     },
-    button: {
+    squareButton: {
         backgroundColor: '#3498db',
         paddingVertical: 15,
         paddingHorizontal: 25,
-        borderRadius: 10,
-        marginVertical: 10,
-        width: '100%',
+        width: '30%',
         alignItems: 'center',
         shadowColor: '#2c3e50',
         shadowOpacity: 0.3,
         shadowOffset: { width: 0, height: 2 },
         shadowRadius: 10,
         elevation: 3,
+        justifyContent: 'center',
+        borderRadius: 0,
     },
-    buttonText: {
+    destinationButton: {
+        padding: 10,
+        backgroundColor: '#3498db',
+        marginHorizontal: 5,
+        borderRadius: 5,
+        alignItems: 'center',
+    },
+    selectedButton: {
+        backgroundColor: '#2ecc71',
+    },
+    destinationText: {
         color: '#fff',
-        fontSize: 16,
         fontWeight: 'bold',
+    },
+    actionButtonsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '80%',
+        marginTop: 20,
+    },
+    startButton: {
+        flex: 1,
+        marginRight: 10,
+        padding: 15,
+        backgroundColor: '#1abc9c',
+        alignItems: 'center',
+        borderRadius: 5,
+    },
+    endButton: {
+        flex: 1,
+        marginLeft: 10,
+        padding: 15,
+        backgroundColor: '#e74c3c',
+        alignItems: 'center',
+        borderRadius: 5,
+    },
+    footerButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        width: '80%',
+        marginTop: 20,
+    },
+    smallButton: {
+        backgroundColor: '#e74c3c',
+        paddingVertical: 10,
+        paddingHorizontal: 15,
+        alignItems: 'center',
+        shadowColor: '#2c3e50',
+        shadowOpacity: 0.3,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 10,
+        elevation: 3,
+        borderRadius: 5,
     },
     scanAgainButton: {
         marginTop: 15,
@@ -488,20 +633,6 @@ const styles = StyleSheet.create({
         backgroundColor: '#1abc9c',
         borderRadius: 8,
         shadowColor: '#16a085',
-        shadowOpacity: 0.3,
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 10,
-        elevation: 3,
-    },
-    logoutButton: {
-        backgroundColor: '#e74c3c',
-        paddingVertical: 15,
-        paddingHorizontal: 25,
-        borderRadius: 10,
-        marginVertical: 10,
-        width: '100%',
-        alignItems: 'center',
-        shadowColor: '#2c3e50',
         shadowOpacity: 0.3,
         shadowOffset: { width: 0, height: 2 },
         shadowRadius: 10,

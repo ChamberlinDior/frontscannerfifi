@@ -1,28 +1,56 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import axiosInstance from '../axiosConfig';
 
 const LoginScreen = ({ navigation }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [uniqueUserNumber, setUniqueUserNumber] = useState('');
+  const [nom, setNom] = useState('');
+  const [users, setUsers] = useState([]);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await axiosInstance.get('/utilisateurs');
+        setUsers(response.data);
+      } catch (error) {
+        console.error("Erreur lors de la récupération des utilisateurs :", error);
+        Alert.alert("Erreur", "Impossible de récupérer les utilisateurs.");
+      }
+    };
+
+    fetchUsers();
+  }, []);
 
   const handleLogin = async () => {
-    // Vérification pour l'admin par défaut
-    if (username === 'Dior' && password === 'Dior') {
-      await AsyncStorage.setItem('userRole', 'admin');
-      await AsyncStorage.setItem('userName', 'Dior');
-      navigation.navigate('Home');
+    if (!uniqueUserNumber || !nom) {
+      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
       return;
     }
 
-    // Vérification pour les autres utilisateurs enregistrés
-    const storedUser = await AsyncStorage.getItem(username);
-    const userData = storedUser ? JSON.parse(storedUser) : null;
+    const user = users.find(
+      (user) => 
+        user.uniqueUserNumber === uniqueUserNumber && 
+        user.nom.toLowerCase() === nom.toLowerCase()
+    );
 
-    if (userData && password === userData.password) {
-      await AsyncStorage.setItem('userRole', userData.role);
-      await AsyncStorage.setItem('userName', userData.username);
-      navigation.navigate('Home');
+    if (user) {
+      try {
+        await AsyncStorage.setItem('userRole', user.role);
+        await AsyncStorage.setItem('userName', user.nom);
+        await AsyncStorage.setItem('userUniqueNumber', user.uniqueUserNumber);
+
+        // Stocker également l'ID du bus si le rôle est chauffeur
+        if (user.role === 'chauffeur') {
+          await AsyncStorage.setItem('busId', '1'); // Remplacez '1' par l'ID du bus réel
+        }
+
+        Alert.alert('Succès', 'Connexion réussie!');
+        navigation.navigate('Home'); // Redirection vers l'écran principal
+      } catch (storageError) {
+        console.error("Erreur lors de la sauvegarde des données utilisateur :", storageError);
+        Alert.alert('Erreur', 'Impossible de sauvegarder les données utilisateur.');
+      }
     } else {
       Alert.alert('Erreur', 'Identifiants incorrects');
     }
@@ -31,19 +59,23 @@ const LoginScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Connexion</Text>
+
       <TextInput
         style={styles.input}
-        placeholder="Nom d'utilisateur"
-        value={username}
-        onChangeText={setUsername}
+        placeholder="Numéro unique"
+        value={uniqueUserNumber}
+        onChangeText={setUniqueUserNumber}
+        autoCapitalize="none"
       />
+
       <TextInput
         style={styles.input}
-        placeholder="Mot de passe"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
+        placeholder="Nom"
+        value={nom}
+        onChangeText={setNom}
+        autoCapitalize="words"
       />
+
       <TouchableOpacity style={styles.button} onPress={handleLogin}>
         <Text style={styles.buttonText}>Se connecter</Text>
       </TouchableOpacity>

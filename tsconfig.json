@@ -1,25 +1,25 @@
 {
   "compilerOptions": {
-    "target": "esnext",                       // Set to the latest ECMAScript target.
-    "module": "esnext",                       // Use ESNext modules.
-    "lib": ["dom", "esnext"],                 // Include DOM and ESNext libraries.
-    "allowJs": true,                          // Allow JavaScript files to be compiled.
-    "skipLibCheck": true,                     // Skip type checking of declaration files.
-    "strict": true,                           // Enable all strict type-checking options.
-    "esModuleInterop": true,                  // Enable interoperability between CommonJS and ESModules.
-    "moduleResolution": "node",               // Use Node module resolution strategy.
-    "isolatedModules": true,                  // Treat each file as a separate module.
-    "jsx": "react-native",                    // Use the React Native JSX transformer.
-    "noEmit": true,                           // Do not emit compiled files, as Expo handles this.
-    "resolveJsonModule": true,                // Allow importing JSON files.
-    "baseUrl": ".",                           // Base directory for resolving non-relative module names.
-    "paths": {                                // Aliases for your imports.
+    "target": "esnext",                       // Cible la dernière version d'ECMAScript.
+    "module": "esnext",                       // Utilise les modules ESNext.
+    "lib": ["dom", "esnext"],                 // Inclut les bibliothèques DOM et ESNext.
+    "allowJs": true,                          // Permet de compiler les fichiers JavaScript.
+    "skipLibCheck": true,                     // Ignore la vérification des fichiers de déclaration.
+    "strict": true,                           // Active toutes les options de vérification stricte.
+    "esModuleInterop": true,                  // Active l'interopérabilité entre CommonJS et ESModules.
+    "moduleResolution": "node",               // Utilise la stratégie de résolution de module Node.
+    "isolatedModules": true,                  // Traite chaque fichier comme un module distinct.
+    "jsx": "react-native",                    // Utilise le transformateur JSX pour React Native.
+    "noEmit": true,                           // N'émet pas les fichiers compilés, car Expo gère cela.
+    "resolveJsonModule": true,                // Permet l'importation de fichiers JSON.
+    "baseUrl": ".",                           // Répertoire de base pour résoudre les noms de module non relatifs.
+    "paths": {                                // Alias pour vos imports.
       "@components/*": ["src/components/*"],
       "@screens/*": ["src/screens/*"],
       "@assets/*": ["assets/*"]
     }
   },
-  "include": ["src/**/*", "types/**/*"],      // Include all TypeScript files in src and types directories.
-  "exclude": ["node_modules", "babel.config.js", "metro.config.js", "jest.config.js"], // Exclude unnecessary files from TypeScript.
-  "extends": "expo/tsconfig.base"             // Extend the Expo base configuration.
+  "include": ["src/**/*", "types/**/*"],      // Inclut tous les fichiers TypeScript dans les répertoires src et types.
+  "exclude": ["node_modules", "babel.config.js", "metro.config.js", "jest.config.js"], // Exclut les fichiers non nécessaires.
+  "extends": "expo/tsconfig.base"             // Étend la configuration de base d'Expo.
 }
