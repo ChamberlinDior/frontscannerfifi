@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScrollView, View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image, Modal, FlatList } from 'react-native';
+import { ScrollView, View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Image, Modal, FlatList } from 'react-native';
 import { BarCodeScanner } from 'expo-barcode-scanner';
 import * as ImagePicker from 'expo-image-picker';
 import axios from 'axios';
@@ -23,10 +23,16 @@ const HomeScreen = ({ navigation }) => {
     const [avatar, setAvatar] = useState(null);
     const ticketRef = useRef(null);
 
+    // Gestion des destinations et trajet
     const [selectedDestination, setSelectedDestination] = useState('');
     const destinations = ['Owendo-Charbonnage', 'Akanda-Plein Niger', 'Charbonnage-Owendo', 'Plein Niger-Akanda'];
-    const [busId, setBusId] = useState(1);
-    const [uniqueUserNumber, setUniqueUserNumber] = useState('USER1234');
+    const [busMacAddress] = useState('54:65:03:bd:c4:d6'); // Adresse MAC du bus
+    const [debutTrajet, setDebutTrajet] = useState(null);
+    const [finTrajet, setFinTrajet] = useState(null);
+
+    // Champs pour les informations du chauffeur
+    const [chauffeurNom, setChauffeurNom] = useState('');
+    const [chauffeurUniqueNumber, setChauffeurUniqueNumber] = useState('');
 
     useEffect(() => {
         requestCameraPermission();
@@ -80,7 +86,7 @@ const HomeScreen = ({ navigation }) => {
     const fetchForfaitStatus = async (rfid) => {
         try {
             if (isConnected) {
-                const response = await axios.get(`http://172.20.10.4:8080/api/forfaits/status/${rfid}`);
+                const response = await axios.get(`http:/172.20.10.4:8080/api/forfaits/status/${rfid}`);
                 processForfaitResponse(response, rfid);
             } else {
                 Alert.alert("Erreur", "Pas de connexion internet. Veuillez activer le mode hors ligne.");
@@ -235,15 +241,14 @@ const HomeScreen = ({ navigation }) => {
         setAvatar(storedAvatar ? { uri: storedAvatar } : null);
 
         if (storedRole === 'chauffeur') {
-            updateBusWithChauffeurInfo(storedUsername, uniqueUserNumber);
+            updateBusWithChauffeurInfo(storedUsername);
         }
     };
 
-    const updateBusWithChauffeurInfo = async (username, uniqueUserNumber) => {
+    const updateBusWithChauffeurInfo = async (username) => {
         try {
-            await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/chauffeur`, {
+            await axios.post(`http://172.20.10.4:8080/api/buses/${busMacAddress}/chauffeur`, {
                 chauffeurName: username,
-                chauffeurNumber: uniqueUserNumber
             });
             console.log("Informations du chauffeur enregistrées avec succès.");
         } catch (error) {
@@ -251,40 +256,34 @@ const HomeScreen = ({ navigation }) => {
         }
     };
 
-    const handleSaveChauffeurInfo = async () => {
-        if (!chauffeurName || !chauffeurUniqueNumber || !busPlateNumber) {
-            Alert.alert("Erreur", "Veuillez remplir le nom, le numéro unique du chauffeur et la plaque d'immatriculation du bus.");
+    const handleChauffeurSubmit = async () => {
+        if (!chauffeurNom || !chauffeurUniqueNumber) {
+            Alert.alert("Erreur", "Veuillez entrer le nom du chauffeur et le numéro unique.");
             return;
         }
 
         try {
-            const busResponse = await axios.get(`http://172.20.10.4:8080/api/buses/matricule/${busPlateNumber}`);
-            if (busResponse.status === 200) {
-                const busId = busResponse.data.id;
-                const chauffeurResponse = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/chauffeur`, {
-                    chauffeurName: chauffeurName,
-                    chauffeurNumber: chauffeurUniqueNumber
-                });
+            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-chauffeur`, {
+                chauffeurNom,
+                chauffeurUniqueNumber
+            });
 
-                if (chauffeurResponse.status === 200) {
-                    Alert.alert("Succès", "Informations du chauffeur enregistrées avec succès.");
-                } else {
-                    Alert.alert("Erreur", "Impossible de mettre à jour les informations du chauffeur.");
-                }
+            if (response.status === 200) {
+                Alert.alert("Succès", "Les informations du chauffeur ont été enregistrées avec succès.");
             } else {
-                Alert.alert("Erreur", "Le bus avec ce numéro de plaque n'existe pas.");
+                Alert.alert("Erreur", "Impossible d'enregistrer les informations du chauffeur.");
             }
         } catch (error) {
-            console.error("Erreur lors de la vérification du bus :", error);
-            Alert.alert("Erreur", "Problème lors de la vérification du bus.");
+            console.error("Erreur lors de l'enregistrement du chauffeur :", error);
+            Alert.alert("Erreur", "Problème lors de l'enregistrement du chauffeur.");
         }
     };
 
     const handleDestinationSelection = async (destination) => {
         try {
             setSelectedDestination(destination);
-            const response = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/select-destination`, null, {
-                params: { destination: destination },
+            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
+                lastDestination: destination
             });
             if (response.status === 200) {
                 Alert.alert("Succès", `Destination ${destination} enregistrée avec succès.`);
@@ -304,10 +303,11 @@ const HomeScreen = ({ navigation }) => {
         }
 
         try {
-            const response = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/start`, {
-                uniqueUserNumber: uniqueUserNumber,
-                destination: selectedDestination,
+            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
+                lastDestination: selectedDestination,
+                debutTrajet: new Date().toISOString() // Enregistrer l'heure du début de trajet
             });
+            setDebutTrajet(new Date());
             if (response.status === 200) {
                 Alert.alert("Succès", "Le trajet a commencé avec succès.");
             } else {
@@ -320,8 +320,16 @@ const HomeScreen = ({ navigation }) => {
     };
 
     const endTrajet = async () => {
+        if (!debutTrajet) {
+            Alert.alert("Erreur", "Le trajet n'a pas encore commencé.");
+            return;
+        }
+
         try {
-            const response = await axios.post(`http://172.20.10.4:8080/api/buses/${busId}/end`);
+            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
+                finTrajet: new Date().toISOString() // Enregistrer l'heure de fin de trajet
+            });
+            setFinTrajet(new Date());
             Alert.alert("Succès", "Le trajet a été terminé avec succès.");
         } catch (error) {
             Alert.alert("Erreur", "Impossible de terminer le trajet.");
@@ -392,7 +400,6 @@ const HomeScreen = ({ navigation }) => {
                     {forfaitStatus ? forfaitStatus : "Scannez un RFID pour voir le statut du forfait"}
                 </Text>
 
-                {/* Afficher les boutons uniquement si le rôle n'est pas "chauffeur" */}
                 {role !== 'CHAUFFEUR' && (
                     <View style={styles.buttonRow}>
                         <TouchableOpacity style={styles.squareButton} onPress={() => handleAssignForfait('jour')}>
@@ -406,6 +413,29 @@ const HomeScreen = ({ navigation }) => {
                         </TouchableOpacity>
                     </View>
                 )}
+
+                {/* Entrée pour le nom du chauffeur */}
+                <Text style={styles.label}>Nom du Chauffeur</Text>
+                <TextInput
+                    style={styles.input}
+                    placeholder="Entrer le nom du chauffeur"
+                    value={chauffeurNom}
+                    onChangeText={setChauffeurNom}
+                />
+
+                {/* Entrée pour le numéro unique du chauffeur */}
+                <Text style={styles.label}>Numéro unique du Chauffeur</Text>
+                <TextInput
+                    style={styles.input}
+                    placeholder="Entrer le numéro unique du chauffeur"
+                    value={chauffeurUniqueNumber}
+                    onChangeText={setChauffeurUniqueNumber}
+                />
+
+                {/* Bouton pour confirmer et envoyer les infos du chauffeur */}
+                <TouchableOpacity style={styles.submitButton} onPress={handleChauffeurSubmit}>
+                    <Text style={styles.submitButtonText}>Confirmer votre Identité</Text>
+                </TouchableOpacity>
 
                 <Text style={styles.title}>Sélectionner la Destination</Text>
                 <FlatList
@@ -551,6 +581,37 @@ const styles = StyleSheet.create({
         color: '#34495e',
         textAlign: 'center',
         fontWeight: '600',
+    },
+    label: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#34495e',
+        textAlign: 'left',
+        marginTop: 15,
+        alignSelf: 'flex-start',
+        marginLeft: 20,
+    },
+    input: {
+        width: '90%',
+        padding: 12,
+        marginVertical: 10,
+        borderColor: '#ccc',
+        borderWidth: 1,
+        borderRadius: 8,
+        backgroundColor: '#fff',
+    },
+    submitButton: {
+        width: '90%',
+        padding: 15,
+        backgroundColor: '#2ecc71',
+        alignItems: 'center',
+        borderRadius: 8,
+        marginVertical: 20,
+    },
+    submitButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
     },
     buttonRow: {
         flexDirection: 'row',

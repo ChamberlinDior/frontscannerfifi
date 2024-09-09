@@ -39,10 +39,21 @@ const LoginScreen = ({ navigation }) => {
         await AsyncStorage.setItem('userRole', user.role);
         await AsyncStorage.setItem('userName', user.nom);
         await AsyncStorage.setItem('userUniqueNumber', user.uniqueUserNumber);
-
-        // Stocker également l'ID du bus si le rôle est chauffeur
+        
+        // Si l'utilisateur est un chauffeur, enregistrer dans la base de données des bus
         if (user.role === 'chauffeur') {
-          await AsyncStorage.setItem('busId', '1'); // Remplacez '1' par l'ID du bus réel
+          const macAddress = '54:65:03:bd:c4:d6'; // Adresse MAC du TPE Android
+
+          try {
+            const response = await axiosInstance.post(`/api/buses/mac/${macAddress}/update-chauffeur`, {
+              chauffeurNom: user.nom,
+              chauffeurUniqueNumber: user.uniqueUserNumber
+            });
+            console.log('Chauffeur enregistré avec succès dans la base de données du bus.');
+          } catch (error) {
+            console.error("Erreur lors de l'enregistrement du chauffeur :", error);
+            Alert.alert("Erreur", "Impossible d'enregistrer le chauffeur dans la base de données.");
+          }
         }
 
         Alert.alert('Succès', 'Connexion réussie!');
