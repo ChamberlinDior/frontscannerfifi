@@ -64,7 +64,7 @@ const HomeScreen = ({ navigation }) => {
             const updates = JSON.parse(pendingUpdates);
             for (const update of updates) {
                 try {
-                    await axios.post('http://172.20.10.4:8080/api/forfaits', update);
+                    await axios.post('http://192.168.1.71:8080/api/forfaits', update);
                 } catch (error) {
                     console.error("Erreur lors de la synchronisation des données locales", error);
                 }
@@ -86,7 +86,7 @@ const HomeScreen = ({ navigation }) => {
     const fetchForfaitStatus = async (rfid) => {
         try {
             if (isConnected) {
-                const response = await axios.get(`http:/172.20.10.4:8080/api/forfaits/status/${rfid}`);
+                const response = await axios.get(`http://192.168.1.71:8080/api/forfaits/status/${rfid}`);
                 processForfaitResponse(response, rfid);
             } else {
                 Alert.alert("Erreur", "Pas de connexion internet. Veuillez activer le mode hors ligne.");
@@ -168,7 +168,7 @@ const HomeScreen = ({ navigation }) => {
 
         if (isConnected) {
             try {
-                const response = await axios.post('http://172.20.10.4:8080/api/forfaits', clientForfaitData);
+                const response = await axios.post('http://192.168.1.71:8080/api/forfaits', clientForfaitData);
                 const newForfaitStatus = `Forfait ${forfaitType} attribué, valide jusqu'à ${response.data.expirationDate}`;
                 setForfaitStatus(newForfaitStatus);
                 await storeLocalData(rfid, newForfaitStatus, response.data.expirationDate);
@@ -247,7 +247,7 @@ const HomeScreen = ({ navigation }) => {
 
     const updateBusWithChauffeurInfo = async (username) => {
         try {
-            await axios.post(`http://172.20.10.4:8080/api/buses/${busMacAddress}/chauffeur`, {
+            await axios.post(`http://192.168.1.71:8080/api/buses/${busMacAddress}/chauffeur`, {
                 chauffeurName: username,
             });
             console.log("Informations du chauffeur enregistrées avec succès.");
@@ -263,7 +263,7 @@ const HomeScreen = ({ navigation }) => {
         }
 
         try {
-            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-chauffeur`, {
+            const response = await axios.post(`http://192.168.1.71:8080/api/buses/mac/${busMacAddress}/update-chauffeur`, {
                 chauffeurNom,
                 chauffeurUniqueNumber
             });
@@ -282,7 +282,7 @@ const HomeScreen = ({ navigation }) => {
     const handleDestinationSelection = async (destination) => {
         try {
             setSelectedDestination(destination);
-            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
+            const response = await axios.post(`http://192.168.1.71:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
                 lastDestination: destination
             });
             if (response.status === 200) {
@@ -303,7 +303,7 @@ const HomeScreen = ({ navigation }) => {
         }
 
         try {
-            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
+            const response = await axios.post(`http://192.168.1.71:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
                 lastDestination: selectedDestination,
                 debutTrajet: new Date().toISOString() // Enregistrer l'heure du début de trajet
             });
@@ -326,7 +326,7 @@ const HomeScreen = ({ navigation }) => {
         }
 
         try {
-            const response = await axios.post(`http://172.20.10.4:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
+            const response = await axios.post(`http://192.168.1.71:8080/api/buses/mac/${busMacAddress}/update-trajet`, {
                 finTrajet: new Date().toISOString() // Enregistrer l'heure de fin de trajet
             });
             setFinTrajet(new Date());

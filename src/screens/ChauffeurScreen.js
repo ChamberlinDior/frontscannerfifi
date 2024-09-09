@@ -15,7 +15,7 @@ const ChauffeurScreen = () => {
         setStartTime(startDateTime);
 
         try {
-            const response = await axios.post('http://172.20.10.4:8080/api/buses/start', {
+            const response = await axios.post('http://192.168.1.71:8080/api/buses/start', {
                 chauffeurName,
                 chauffeurNumber,
                 busDestination,
@@ -35,7 +35,7 @@ const ChauffeurScreen = () => {
         setEndTime(endDateTime);
 
         try {
-            const response = await axios.post('http://192.168.1.80:8080/api/buses/end', {
+            const response = await axios.post('http://192.168.1.71:8080/api/buses/end', {
                 chauffeurName,
                 chauffeurNumber,
                 endTime: endDateTime,

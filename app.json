@@ -28,6 +28,13 @@
       "eas": {
         "projectId": "477c2813-5b9d-408b-aecd-d79ec7a451aa"
       }
+    },
+    "owner": "dior12",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/477c2813-5b9d-408b-aecd-d79ec7a451aa"
     }
   }
 }

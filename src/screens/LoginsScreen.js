@@ -7,6 +7,7 @@ const LoginScreen = ({ navigation }) => {
   const [uniqueUserNumber, setUniqueUserNumber] = useState('');
   const [nom, setNom] = useState('');
   const [users, setUsers] = useState([]);
+  const [destinations, setDestinations] = useState([]); // Stocker les destinations et trajets
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -39,25 +40,42 @@ const LoginScreen = ({ navigation }) => {
         await AsyncStorage.setItem('userRole', user.role);
         await AsyncStorage.setItem('userName', user.nom);
         await AsyncStorage.setItem('userUniqueNumber', user.uniqueUserNumber);
-        
-        // Si l'utilisateur est un chauffeur, enregistrer dans la base de données des bus
+
+        // Si l'utilisateur est un chauffeur, vérification du matricule et de l'adresse MAC
         if (user.role === 'chauffeur') {
           const macAddress = '54:65:03:bd:c4:d6'; // Adresse MAC du TPE Android
 
           try {
-            const response = await axiosInstance.post(`/api/buses/mac/${macAddress}/update-chauffeur`, {
-              chauffeurNom: user.nom,
-              chauffeurUniqueNumber: user.uniqueUserNumber
-            });
-            console.log('Chauffeur enregistré avec succès dans la base de données du bus.');
+            const busResponse = await axiosInstance.get(`/api/buses/mac/${macAddress}`);
+            const busData = busResponse.data;
+
+            // La condition pour vérifier que le matricule est "AABNH454"
+            if (busData.matricule === 'AABNH454' && busData.macAddress === macAddress) {
+              // Récupérer les destinations et trajets associés à ce bus
+              const destinationsResponse = await axiosInstance.get(`/api/buses/${busData.id}/destinations`);
+              setDestinations(destinationsResponse.data);
+              
+              console.log('Destinations récupérées avec succès :', destinationsResponse.data);
+
+              await axiosInstance.post(`/api/buses/mac/${macAddress}/update-chauffeur`, {
+                chauffeurNom: user.nom,
+                chauffeurUniqueNumber: user.uniqueUserNumber
+              });
+              console.log('Chauffeur enregistré avec succès dans la base de données du bus.');
+
+            } else {
+              Alert.alert('Erreur', 'Le bus doit avoir le matricule AABNH454 et l\'adresse MAC doit être enregistrée pour accéder aux destinations.');
+              return;
+            }
           } catch (error) {
-            console.error("Erreur lors de l'enregistrement du chauffeur :", error);
-            Alert.alert("Erreur", "Impossible d'enregistrer le chauffeur dans la base de données.");
+            console.error("Erreur lors de la vérification du bus :", error);
+            Alert.alert("Erreur", "Impossible de vérifier les informations du bus.");
+            return;
           }
         }
 
         Alert.alert('Succès', 'Connexion réussie!');
-        navigation.navigate('Home'); // Redirection vers l'écran principal
+        navigation.navigate('Home', { destinations }); // Redirection vers l'écran principal avec les destinations
       } catch (storageError) {
         console.error("Erreur lors de la sauvegarde des données utilisateur :", storageError);
         Alert.alert('Erreur', 'Impossible de sauvegarder les données utilisateur.');
